@@ -17,9 +17,11 @@ using Clasharp.ViewModels;
 using Clasharp.Views;
 using Clasharp.Common;
 using ReactiveUI;
-using Refit;
+using System.Windows;
 using Splat;
 using Splat.Autofac;
+using System.Diagnostics;
+using System.Threading;
 
 namespace Clasharp
 {
@@ -43,9 +45,43 @@ namespace Clasharp
             SetupSuspensionHost();
             SetupAutofac();
             SetupLifetime();
+            // If program was started by uri scheme arg, probably the uri scheme is a remote uri for profile, so we should add it to the profiles
+            AddProfileIfThereIsUriSchemeInProgramArgs();
+
+            // Check to see if there is already any instance of app
+            if (!Program.mutex.WaitOne(TimeSpan.Zero, true))
+            {
+                Process.GetCurrentProcess().Kill(true);
+            }
             base.OnFrameworkInitializationCompleted();
         }
+        private void AddProfileIfThereIsUriSchemeInProgramArgs()
+        {
+            if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            {
+                if (desktop.Args.Length > 0)
+                {
+                    if (URIScheme.IsUriForProgram(desktop.Args[0]))
+                    {
+                        var pService = Locator.Current.GetService<IProfilesService>();
+                        if (pService != null)
+                        {
+                            // Parse uri & Add profile
+                            try
+                            {
+                                var profile = URIScheme.ParseUri(desktop.Args[0]);
+                                pService.AddProfile(profile);
+                            }
+                            catch
+                            {
+                                // Handle if the uri is invalid
+                            }
+                        }
+                    }
 
+                }
+            }
+        }
         private void SetupLifetime()
         {
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
@@ -95,6 +131,8 @@ namespace Clasharp
             builder.RegisterType<ClashRemoteCli>().Named<IClashCli>("remote").SingleInstance();
             builder.RegisterType<ClashApiFactory>().As<IClashApiFactory>().SingleInstance();
             builder.RegisterType<CoreServiceHelper>().SingleInstance();
+
+
 
             builder.RegisterType<MainWindowViewModel>().As<IMainWindowViewModel>().SingleInstance();
             builder.RegisterType<ProxiesViewModel>().As<IProxiesViewModel>().SingleInstance();
